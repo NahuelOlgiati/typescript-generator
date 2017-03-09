@@ -324,7 +324,14 @@ public class ModelCompiler {
     }
 
     private TsModel createJaxrsClient(SymbolTable symbolTable, TsModel tsModel, JaxrsApplicationModel jaxrsApplication, Symbol responseSymbol, TsType optionsType) {
-        final Symbol httpClientSymbol = symbolTable.getSyntheticSymbol("HttpClient");
+        
+    	settings.importDeclarations = new ArrayList<>();
+        settings.importDeclarations.add("import { Injectable } from '@angular/core'");
+        settings.importDeclarations.add("import { Headers, Http, Response, RequestOptions } from '@angular/http'");
+        settings.importDeclarations.add("import { Observable } from 'rxjs/Rx'");
+        settings.importDeclarations.add("import 'rxjs/add/operator/map'");
+    	
+    	final Symbol httpClientSymbol = symbolTable.getSyntheticSymbol("HttpClient");
 
         // HttpClient interface
         tsModel.getBeans().add(new TsBeanModel(null, false, httpClientSymbol, null, null, null, null, null, null, Arrays.asList(

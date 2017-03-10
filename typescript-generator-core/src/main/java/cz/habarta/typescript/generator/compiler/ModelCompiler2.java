@@ -7,7 +7,6 @@ import cz.habarta.typescript.generator.parser.*;
 import cz.habarta.typescript.generator.util.Utils;
 import java.lang.reflect.*;
 import java.util.*;
-import java.util.Map.Entry;
 import javax.ws.rs.core.Application;
 
 
@@ -31,12 +30,12 @@ import javax.ws.rs.core.Application;
  * </li>
  * </ol>
  */
-public class ModelCompiler {
+public class ModelCompiler2 {
 
     private final Settings settings;
     private final TypeProcessor typeProcessor;
 
-    public ModelCompiler(Settings settings, TypeProcessor typeProcessor) {
+    public ModelCompiler2(Settings settings, TypeProcessor typeProcessor) {
         this.settings = settings;
         this.typeProcessor = typeProcessor;
     }
@@ -50,7 +49,7 @@ public class ModelCompiler {
         // JAX-RS
         if (settings.generateJaxrsApplicationInterface || settings.generateJaxrsApplicationClient) {
             final JaxrsApplicationModel jaxrsApplication = model.getJaxrsApplication() != null ? model.getJaxrsApplication() : new JaxrsApplicationModel();
-            final Symbol responseSymbol = symbolTable.getSyntheticSymbol("Observable");
+            final Symbol responseSymbol = createJaxrsResponseType(symbolTable, tsModel);
             final TsType optionsType = settings.restOptionsType != null
                     ? new TsType.VerbatimType(settings.restOptionsType)
                     : null;
@@ -301,12 +300,26 @@ public class ModelCompiler {
         return properties;
     }
 
+    private Symbol createJaxrsResponseType(SymbolTable symbolTable, TsModel tsModel) {
+        // response type
+        final Symbol responseSymbol = symbolTable.getSyntheticSymbol("RestResponse");
+        final TsType.GenericVariableType varR = new TsType.GenericVariableType("R");
+        final TsAliasModel responseTypeAlias;
+        if (settings.restResponseType != null) {
+            responseTypeAlias = new TsAliasModel(null, responseSymbol, Arrays.asList(varR), new TsType.VerbatimType(settings.restResponseType), null);
+        } else {
+            final TsType.GenericReferenceType responseTypeDefinition = new TsType.GenericReferenceType(symbolTable.getSyntheticSymbol("Promise"), varR);
+            responseTypeAlias = new TsAliasModel(null, responseSymbol, Arrays.asList(varR), responseTypeDefinition, null);
+        }
+        tsModel.getTypeAliases().add(responseTypeAlias);
+        return responseSymbol;
+    }
+
     private TsModel createJaxrsInterface(SymbolTable symbolTable, TsModel tsModel, JaxrsApplicationModel jaxrsApplication, Symbol responseSymbol, TsType optionsType) {
-        final List<TsBeanModel> services = processJaxrsServices(jaxrsApplication, symbolTable, responseSymbol, optionsType, false);
-        for (TsBeanModel service : services)
-		{
-        	tsModel.getBeans().add(service);
-		}
+        final List<TsMethodModel> methods = processJaxrsMethods(jaxrsApplication, symbolTable, responseSymbol, optionsType, false);
+        final String applicationName = getApplicationName(jaxrsApplication);
+        final TsBeanModel interfaceModel = new TsBeanModel(Application.class, false, symbolTable.getSyntheticSymbol(applicationName), null, null, null, null, null, null, methods, null);
+        tsModel.getBeans().add(interfaceModel);
         return tsModel;
     }
 
@@ -317,80 +330,71 @@ public class ModelCompiler {
         settings.importDeclarations.add("import { Headers, Http, Response, RequestOptions } from '@angular/http'");
         settings.importDeclarations.add("import { Observable } from 'rxjs/Rx'");
         settings.importDeclarations.add("import 'rxjs/add/operator/map'");
-        settings.importDeclarations.add("const options = new RequestOptions({ headers: new Headers({ 'Content-Type': 'application/json' }) })");
-        settings.importDeclarations.add("declare var jQuery: any");
-        
-//        get(url: string, options?: RequestOptionsArgs): Observable<Response>;
-//        post(url: string, body: any, options?: RequestOptionsArgs): Observable<Response>;
-//        put(url: string, body: any, options?: RequestOptionsArgs): Observable<Response>;
-//        delete(url: string, options?: RequestOptionsArgs): Observable<Response>;
-//        patch(url: string, body: any, options?: RequestOptionsArgs): Observable<Response>;
-//        head(url: string, options?: RequestOptionsArgs): Observable<Response>;
-//        options(url: string, options?: RequestOptionsArgs): Observable<Response>;
+    	
+    	final Symbol httpClientSymbol = symbolTable.getSyntheticSymbol("HttpClient");
 
-        tsModel.getBeans().addAll(processJaxrsServices(jaxrsApplication, symbolTable, responseSymbol, optionsType, true));
-        
+        // HttpClient interface
+        tsModel.getBeans().add(new TsBeanModel(null, false, httpClientSymbol, null, null, null, null, null, null, Arrays.asList(
+                new TsMethodModel("request", new TsType.GenericReferenceType(responseSymbol, TsType.Any), Arrays.asList(
+                        new TsParameterModel("requestConfig", new TsType.ObjectType(
+                                new TsProperty("method", TsType.String),
+                                new TsProperty("url", TsType.String),
+                                new TsProperty("queryParams", new TsType.OptionalType(TsType.Any)),
+                                new TsProperty("data", new TsType.OptionalType(TsType.Any)),
+                                optionsType != null ? new TsProperty("options", new TsType.OptionalType(optionsType)) : null
+                        ))
+                ), null, null)
+        ), null));
+
+        // application client class
+        final TsConstructorModel constructor = new TsConstructorModel(
+                Arrays.asList(new TsParameterModel(TsAccessibilityModifier.Protected, "httpClient", new TsType.ReferenceType(httpClientSymbol))),
+                Collections.<TsStatement>emptyList(),
+                null
+        );
+        final List<TsMethodModel> methods = processJaxrsMethods(jaxrsApplication, symbolTable, responseSymbol, optionsType, true);
+        final String applicationName = getApplicationName(jaxrsApplication);
+        final String applicationClientName = applicationName + "Client";
+        final TsType interfaceType = settings.generateJaxrsApplicationInterface ? new TsType.ReferenceType(symbolTable.getSyntheticSymbol(applicationName)) : null;
+        final TsBeanModel clientModel = new TsBeanModel(Application.class, true, symbolTable.getSyntheticSymbol(applicationClientName), null, null, null, Utils.listFromNullable(interfaceType), null, constructor, methods, null);
+        tsModel.getBeans().add(clientModel);
         return tsModel;
     }
 
-    private List<TsBeanModel> processJaxrsServices(JaxrsApplicationModel jaxrsApplication, SymbolTable symbolTable, Symbol responseSymbol, TsType optionsType, boolean implement) {
-        final List<TsBeanModel> services = new ArrayList<>();
+    private List<TsMethodModel> processJaxrsMethods(JaxrsApplicationModel jaxrsApplication, SymbolTable symbolTable, Symbol responseSymbol, TsType optionsType, boolean implement) {
+        final List<TsMethodModel> methods = new ArrayList<>();
         final String applicationPath = jaxrsApplication.getApplicationPath();
-        final Map<String, List<JaxrsMethodModel>> serviceMethodMap = groupingByServiceName(jaxrsApplication.getMethods());
-        
-        for (Entry<String, List<JaxrsMethodModel>> entry : serviceMethodMap.entrySet())
-		{
-	    	final String serviceName = entry.getKey();
-	    	final List<JaxrsMethodModel> methods = entry.getValue();
-	    	
-	    	List<TsMethodModel> tsMethodModelList = new ArrayList<>();
-	    	for (JaxrsMethodModel method : methods)
-			{
-	    		boolean createLongName = false;
-	    		tsMethodModelList.add(processJaxrsMethod(symbolTable, applicationPath, responseSymbol, method, createLongName, optionsType, implement));
-			}
-	    	
-	    	// Http Symbol
-	    	final Symbol angularHttpSymbol = symbolTable.getSyntheticSymbol("Http");
-	    	
-	        // application client class
-	        final TsConstructorModel constructor = new TsConstructorModel(
-		        Arrays.asList(new TsParameterModel(TsAccessibilityModifier.Private, "http", new TsType.ReferenceType(angularHttpSymbol))),
-		        Collections.<TsStatement>emptyList(),
-		        null
-	        );
-            
-            final TsType interfaceType = settings.generateJaxrsApplicationInterface ? new TsType.ReferenceType(symbolTable.getSyntheticSymbol(serviceName)) : null;
-            final TsBeanModel clientModel = new TsBeanModel(Application.class, true, symbolTable.getSyntheticSymbol(serviceName), null, null, null, Utils.listFromNullable(interfaceType), null, constructor, tsMethodModelList, null);
-            services.add(clientModel);
-		}
-        
-        return services;
+        final Map<String, Long> methodNamesCount = groupingByMethodName(jaxrsApplication.getMethods());
+        for (JaxrsMethodModel method : jaxrsApplication.getMethods()) {
+            final boolean createLongName = methodNamesCount.get(method.getName()) > 1;
+            methods.add(processJaxrsMethod(symbolTable, applicationPath, responseSymbol, method, createLongName, optionsType, implement));
+        }
+        return methods;
     }
 
-    private static Map<String, List<JaxrsMethodModel>> groupingByServiceName(List<JaxrsMethodModel> methods) {
-        final Map<String, List<JaxrsMethodModel>> serviceMethodMap = new LinkedHashMap<>();
-        for (JaxrsMethodModel method : methods) {
-        	final String name = method.getOriginClass().getSimpleName();
-        	if (serviceMethodMap.containsKey(name))
-			{
-        		serviceMethodMap.get(name).add(method);
-			}else{
-				final List<JaxrsMethodModel> mapMethods = new ArrayList<>();
-        		mapMethods.add(method);
-        		serviceMethodMap.put(name, mapMethods);
-			}
-        }
-        return serviceMethodMap;
+    private static String getApplicationName(JaxrsApplicationModel jaxrsApplication) {
+        return jaxrsApplication.getApplicationName() != null ? jaxrsApplication.getApplicationName() : "RestApplication";
     }
-    
+
+    private static Map<String, Long> groupingByMethodName(List<JaxrsMethodModel> methods) {
+        // Java 8
+//        return methods.stream().collect(Collectors.groupingBy(JaxrsMethodModel::getName, Collectors.counting()));
+        final Map<String, Long> methodNamesCount = new LinkedHashMap<>();
+        for (JaxrsMethodModel method : methods) {
+            final String name = method.getName();
+            final long count = methodNamesCount.containsKey(name) ? methodNamesCount.get(name) : 0;
+            methodNamesCount.put(name, count + 1);
+        }
+        return methodNamesCount;
+    }
+        
+
     private TsMethodModel processJaxrsMethod(SymbolTable symbolTable, String pathPrefix, Symbol responseSymbol, JaxrsMethodModel method, boolean createLongName, TsType optionsType, boolean implement) {
         final String path = Utils.joinPath(pathPrefix, method.getPath());
         final PathTemplate pathTemplate = PathTemplate.parse(path);
-        final List<String> comments = null;
-//        final List<String> comments = new ArrayList<>();
-//        comments.add("HTTP " + method.getHttpMethod() + " /" + path);
-//        comments.add("Java method: " + method.getOriginClass().getName() + "." + method.getName());
+        final List<String> comments = new ArrayList<>();
+        comments.add("HTTP " + method.getHttpMethod() + " /" + path);
+        comments.add("Java method: " + method.getOriginClass().getName() + "." + method.getName());
         final List<TsParameterModel> parameters = new ArrayList<>();
         // path params
         for (MethodParameterModel parameter : method.getPathParams()) {
@@ -430,23 +434,20 @@ public class ModelCompiler {
         } else {
             nameSuffix = "";
         }
-        // TODO scan consumes annotation
         // implementation
         final List<TsStatement> body;
         if (implement) {
             body = new ArrayList<>();
             body.add(new TsReturnStatement(
                     new TsCallExpression(
-                            new TsMemberExpression(new TsMemberExpression(new TsThisExpression(), "http"), method.getHttpMethod().toLowerCase()),
-                           processPathTemplate(pathTemplate,queryParameter),
-                            new TsStringLiteral("TODO")
-//                            new TsObjectLiteral(
-//                                    new TsPropertyDefinition("method", new TsStringLiteral(method.getHttpMethod())),
-//                                    new TsPropertyDefinition("url", processPathTemplate(pathTemplate)),
-//                                    queryParameter != null ? new TsPropertyDefinition("queryParams", new TsIdentifierReference("queryParams")) : null,
-//                                    method.getEntityParam() != null ? new TsPropertyDefinition("data", new TsIdentifierReference(method.getEntityParam().getName())) : null,
-//                                    optionsType != null ? new TsPropertyDefinition("options", new TsIdentifierReference("options")) : null
-//                            )
+                            new TsMemberExpression(new TsMemberExpression(new TsThisExpression(), "httpClient"), "request"),
+                            new TsObjectLiteral(
+                                    new TsPropertyDefinition("method", new TsStringLiteral(method.getHttpMethod())),
+                                    new TsPropertyDefinition("url", processPathTemplate(pathTemplate)),
+                                    queryParameter != null ? new TsPropertyDefinition("queryParams", new TsIdentifierReference("queryParams")) : null,
+                                    method.getEntityParam() != null ? new TsPropertyDefinition("data", new TsIdentifierReference(method.getEntityParam().getName())) : null,
+                                    optionsType != null ? new TsPropertyDefinition("options", new TsIdentifierReference("options")) : null
+                            )
                     )
             ));
         } else {
@@ -462,7 +463,7 @@ public class ModelCompiler {
         return new TsParameterModel(parameter.getName(), parameterType);
     }
 
-    private static TsTemplateLiteral processPathTemplate(PathTemplate pathTemplate, TsParameterModel queryParameter) {
+    private static TsTemplateLiteral processPathTemplate(PathTemplate pathTemplate) {
         final List<TsExpression> spans = new ArrayList<>();
         for (PathTemplate.Part part : pathTemplate.getParts()) {
             if (part instanceof PathTemplate.Literal) {
@@ -474,10 +475,6 @@ public class ModelCompiler {
                 spans.add(new TsIdentifierReference(parameter.getName()));
             }
         }
-        if (queryParameter != null)
-		{
-        	spans.add(new TsStringLiteral(" + '?' + jQuery.param(queryParams)"));
-		}
         return new TsTemplateLiteral(spans);
     }
 

@@ -2,6 +2,7 @@
 package cz.habarta.typescript.generator.emitter;
 
 import cz.habarta.typescript.generator.Settings;
+import java.util.Iterator;
 import java.util.List;
 
 
@@ -20,18 +21,22 @@ public class TsTemplateLiteral extends TsExpression {
     @Override
     public String format(Settings settings) {
         final StringBuilder sb = new StringBuilder();
-        sb.append("`");
-        for (TsExpression span : spans) {
+        sb.append("'");
+        for (Iterator<TsExpression> iterator = spans.iterator(); iterator.hasNext();)
+		{
+			final TsExpression span = iterator.next();
             if (span instanceof TsStringLiteral) {
                 final TsStringLiteral literal = (TsStringLiteral) span;
                 sb.append(literal.getLiteral());
+                if (!iterator.hasNext())
+    			{
+                	sb.append("'");	
+    			}
             } else {
-                sb.append("${");
+                sb.append("' + ");
                 sb.append(span.format(settings));
-                sb.append("}");
             }
-        }
-        sb.append("`");
+		}
         return sb.toString();
     }
 

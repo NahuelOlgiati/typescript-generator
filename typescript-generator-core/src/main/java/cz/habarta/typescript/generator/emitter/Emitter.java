@@ -122,6 +122,7 @@ public class Emitter {
     private void emitBeans(TsModel model, boolean exportKeyword) {
         for (TsBeanModel bean : model.getBeans()) {
             writeNewLine();
+            emitAnnotations(bean.getAnnotations());
             emitComments(bean.getComments());
             final String declarationType = bean.isClass() ? "class" : "interface";
             final String typeParameters = bean.getTypeParameters().isEmpty() ? "" : "<" + Utils.join(bean.getTypeParameters(), ", ")+ ">";
@@ -251,6 +252,14 @@ public class Emitter {
         if (settings.umdNamespace != null) {
             writeNewLine();
             writeIndentedLine("export as namespace " + settings.umdNamespace + ";");
+        }
+    }
+    
+    private void emitAnnotations(List<String> annotations) {
+        if (annotations != null) {
+            for (String annotation : annotations) {
+                writeIndentedLine(annotation);
+            }
         }
     }
 

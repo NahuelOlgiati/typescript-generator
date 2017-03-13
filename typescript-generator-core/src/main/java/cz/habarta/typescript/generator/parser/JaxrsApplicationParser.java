@@ -12,6 +12,7 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.*;
 import javax.ws.rs.ApplicationPath;
+import javax.ws.rs.Consumes;
 import javax.ws.rs.CookieParam;
 import javax.ws.rs.FormParam;
 import javax.ws.rs.HeaderParam;
@@ -122,6 +123,10 @@ public class JaxrsApplicationParser {
         // JAX-RS specification - 3.3 Resource Methods
         final HttpMethod httpMethod = getHttpMethod(method);
         if (httpMethod != null) {
+        	
+        	// Consumes
+        	final String[] consumes = getConsumesAnnotation(method);
+        	
             // path parameters
             final List<MethodParameterModel> pathParams = new ArrayList<>();
             final PathTemplate pathTemplate = PathTemplate.parse(context.path);
@@ -163,7 +168,7 @@ public class JaxrsApplicationParser {
                 foundType(result, modelReturnType, resourceClass, method.getName());
             }
             // create method
-            model.getMethods().add(new JaxrsMethodModel(resourceClass, method.getName(), modelReturnType, httpMethod.value(), context.path, pathParams, queryParams, entityParameter));
+            model.getMethods().add(new JaxrsMethodModel(resourceClass, method.getName(), modelReturnType, httpMethod.value(), consumes , context.path, pathParams, queryParams, entityParameter));
         }
         // JAX-RS specification - 3.4.1 Sub Resources
         if (pathAnnotation != null && httpMethod == null) {
@@ -205,6 +210,11 @@ public class JaxrsApplicationParser {
             }
         }
         return null;
+    }
+    
+    private static String[] getConsumesAnnotation(Method method) {
+        final Consumes consumes = method.getAnnotation(Consumes.class);
+        return consumes != null ? consumes.value() : null;
     }
 
     private static MethodParameterModel getEntityParameter(Method method) {

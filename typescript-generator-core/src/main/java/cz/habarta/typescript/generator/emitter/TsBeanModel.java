@@ -17,8 +17,9 @@ public class TsBeanModel extends TsDeclarationModel {
     private final List<TsPropertyModel> properties;
     private final TsConstructorModel constructor;
     private final List<TsMethodModel> methods;
+    private final List<String> annotations;
 
-    public TsBeanModel(Class<?> origin, boolean isClass, Symbol name, List<TsType.GenericVariableType> typeParameters, TsType parent, List<Class<?>> taggedUnionClasses, List<TsType> interfaces, List<TsPropertyModel> properties, TsConstructorModel constructor, List<TsMethodModel> methods, List<String> comments) {
+    public TsBeanModel(Class<?> origin, boolean isClass, Symbol name, List<TsType.GenericVariableType> typeParameters, TsType parent, List<Class<?>> taggedUnionClasses, List<TsType> interfaces, List<TsPropertyModel> properties, TsConstructorModel constructor, List<TsMethodModel> methods, List<String> comments, List<String> annotations) {
         super(origin, name, comments);
         this.isClass = isClass;
         this.typeParameters = Utils.listFromNullable(typeParameters);
@@ -28,6 +29,7 @@ public class TsBeanModel extends TsDeclarationModel {
         this.properties = Utils.listFromNullable(properties);
         this.constructor = constructor;
         this.methods = Utils.listFromNullable(methods);
+        this.annotations = annotations;
     }
 
     public boolean isClass() {
@@ -76,7 +78,7 @@ public class TsBeanModel extends TsDeclarationModel {
     }
 
     public TsBeanModel withProperties(List<TsPropertyModel> properties) {
-        return new TsBeanModel(origin, isClass, name, typeParameters, parent, taggedUnionClasses, interfaces, properties, constructor, methods, comments);
+        return new TsBeanModel(origin, isClass, name, typeParameters, parent, taggedUnionClasses, interfaces, properties, constructor, methods, comments, annotations);
     }
 
     public TsConstructorModel getConstructor() {
@@ -86,9 +88,13 @@ public class TsBeanModel extends TsDeclarationModel {
     public List<TsMethodModel> getMethods() {
         return methods;
     }
+    
+    public List<String> getAnnotations() {
+        return annotations;
+    }
 
     public TsBeanModel withMethods(List<TsMethodModel> methods) {
-        return new TsBeanModel(origin, isClass, name, typeParameters, parent, taggedUnionClasses, interfaces, properties, constructor, methods, comments);
+        return new TsBeanModel(origin, isClass, name, typeParameters, parent, taggedUnionClasses, interfaces, properties, constructor, methods, comments, annotations);
     }
 
 }

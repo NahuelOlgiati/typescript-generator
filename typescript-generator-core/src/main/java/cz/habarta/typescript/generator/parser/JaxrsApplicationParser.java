@@ -137,12 +137,16 @@ public class JaxrsApplicationParser {
                     pathParams.add(new MethodParameterModel(parameter.getName(), type != null ? type : String.class));
                 }
             }
-            // query parameters
+            // form and query parameters
+            final List<MethodParameterModel> formParams = new ArrayList<>();
             final List<MethodParameterModel> queryParams = new ArrayList<>();
             final List<Parameter> params = Parameter.ofMethod(method);
             for (Parameter param : params) {
-                final QueryParam queryParamAnnotation = param.getAnnotation(QueryParam.class);
-                if (queryParamAnnotation != null) {
+            	final FormParam formParamAnnotation = param.getAnnotation(FormParam.class);
+            	final QueryParam queryParamAnnotation = param.getAnnotation(QueryParam.class);
+                if (formParamAnnotation != null) {
+                	formParams.add(new MethodParameterModel(formParamAnnotation.value(), param.getParameterizedType()));
+                }else if (queryParamAnnotation != null) {
                     queryParams.add(new MethodParameterModel(queryParamAnnotation.value(), param.getParameterizedType()));
                 }
             }
@@ -168,7 +172,7 @@ public class JaxrsApplicationParser {
                 foundType(result, modelReturnType, resourceClass, method.getName());
             }
             // create method
-            model.getMethods().add(new JaxrsMethodModel(resourceClass, method.getName(), modelReturnType, httpMethod.value(), consumes , context.path, pathParams, queryParams, entityParameter));
+            model.getMethods().add(new JaxrsMethodModel(resourceClass, method.getName(), modelReturnType, httpMethod.value(), consumes , context.path, pathParams, formParams, queryParams, entityParameter));
         }
         // JAX-RS specification - 3.4.1 Sub Resources
         if (pathAnnotation != null && httpMethod == null) {

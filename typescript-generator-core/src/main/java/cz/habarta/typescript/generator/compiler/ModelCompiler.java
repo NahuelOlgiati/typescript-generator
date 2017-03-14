@@ -11,7 +11,6 @@ import java.util.Map.Entry;
 import javax.ws.rs.core.Application;
 import javax.ws.rs.core.MediaType;
 
-
 /**
  * Compiles Java model to TypeScript model.
  * <ol>
@@ -315,15 +314,31 @@ public class ModelCompiler {
     private TsModel createJaxrsClient(SymbolTable symbolTable, TsModel tsModel, JaxrsApplicationModel jaxrsApplication, Symbol responseSymbol, TsType optionsType) {
         
     	settings.importDeclarations = new ArrayList<>();
-        settings.importDeclarations.add("import { Injectable } from '@angular/core'");
-        settings.importDeclarations.add("import { Headers, Http, Response, RequestOptions } from '@angular/http'");
+        settings.importDeclarations.add("import { NgModule, Injectable } from '@angular/core'");
+        settings.importDeclarations.add("import { Headers, Http, RequestOptions } from '@angular/http'");
         settings.importDeclarations.add("import { Observable } from 'rxjs/Rx'");
         settings.importDeclarations.add("declare var jQuery: any");
         consumesHeadersMap = getConsumesHeadersMap(MediaType.APPLICATION_JSON, MediaType.MULTIPART_FORM_DATA, MediaType.APPLICATION_FORM_URLENCODED);
 		settings.importDeclarations.addAll(consumesHeadersMap.values());
 
-        tsModel.getBeans().addAll(processJaxrsServices(jaxrsApplication, symbolTable, responseSymbol, optionsType, true));
-        
+        final List<TsBeanModel> processJaxrsServices = processJaxrsServices(jaxrsApplication, symbolTable, responseSymbol, optionsType, true);
+		tsModel.getBeans().addAll(processJaxrsServices);
+		
+		final String breakLine = System.getProperty("line.separator");
+		String module = "@NgModule({ providers: [ ";
+		for (Iterator<TsBeanModel> iterator = processJaxrsServices.iterator(); iterator.hasNext();)
+		{
+			module +=  breakLine + "\t" + iterator.next().getName();
+			if (iterator.hasNext())
+			{
+				module += ",";
+			}
+		}
+		module += breakLine + " ] })";
+		
+		final TsBeanModel clientModule = new TsBeanModel(Application.class, true, symbolTable.getSyntheticSymbol("AppBackendModule"), null, null, null, null, null, null, null, null, Arrays.asList(module));
+		tsModel.getBeans().add(clientModule);
+		
         return tsModel;
     }
 
@@ -346,7 +361,7 @@ public class ModelCompiler {
         
         for (Entry<String, List<JaxrsMethodModel>> entry : serviceMethodMap.entrySet())
 		{
-	    	final String serviceName = entry.getKey();
+	    	final String serviceName = entry.getKey().replace("EndPoint", "Service");
 	    	final List<JaxrsMethodModel> methods = entry.getValue();
 	    	
 	    	List<TsMethodModel> tsMethodModelList = new ArrayList<>();
@@ -406,6 +421,24 @@ public class ModelCompiler {
         if (method.getEntityParam() != null) {
             parameters.add(processParameter(symbolTable, method, method.getEntityParam()));
         }
+        // form params
+        final List<MethodParameterModel> formParams = method.getFormParams();
+        final TsParameterModel formParameter;
+        if (formParams != null && !formParams.isEmpty()) {
+            final List<TsProperty> properties = new ArrayList<>();
+            for (MethodParameterModel queryParam : formParams) {
+                final TsType type = typeFromJava(symbolTable, queryParam.getType(), method.getName(), method.getOriginClass());
+                properties.add(new TsProperty(queryParam.getName(), new TsType.OptionalType(type)));
+            }
+            formParameter = new TsParameterModel("formParams", new TsType.OptionalType(new TsType.ObjectType(properties)));
+            parameters.add(formParameter);
+        } else {
+            formParameter = null;
+        }
+        if (optionsType != null) {
+            final TsParameterModel optionsParameter = new TsParameterModel("options", new TsType.OptionalType(optionsType));
+            parameters.add(optionsParameter);
+        }
         // query params
         final List<MethodParameterModel> queryParams = method.getQueryParams();
         final TsParameterModel queryParameter;
@@ -439,6 +472,7 @@ public class ModelCompiler {
 			        Utils.removeNulls(Arrays.asList(
 				        processPathTemplate(pathTemplate,queryParameter),
 				        method.getEntityParam() != null ? new TsIdentifierReference(method.getEntityParam().getName()) : null,
+				        formParameter != null ?	new TsIdentifierReference("jQuery.param(formParams)") : null,
 				        getConsumes(method)
 			        ))
 			);
